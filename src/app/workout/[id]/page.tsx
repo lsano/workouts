@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, useEffect, useCallback, use } from "react";
+import { useState, useEffect, useCallback, useRef, use } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Timer from "@/components/Timer";
 import SetTracker from "@/components/SetTracker";
+import { HeartRateMonitor } from "@/components/HeartRateMonitor";
+import { saveWorkoutToHealth } from "@/lib/health/health-service";
 
 interface ExerciseSet {
   id: string;
@@ -48,6 +50,8 @@ export default function WorkoutPage({ params }: { params: Promise<{ id: string }
   const [workout, setWorkout] = useState<Workout | null>(null);
   const [activeSection, setActiveSection] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [healthStats, setHealthStats] = useState<{ totalCalories?: number; averageHeartRate?: number }>({});
+  const workoutStartRef = useRef<Date | null>(null);
 
   const fetchWorkout = useCallback(async () => {
     const res = await fetch(`/api/workouts/${id}`);
@@ -63,6 +67,7 @@ export default function WorkoutPage({ params }: { params: Promise<{ id: string }
   }, [fetchWorkout]);
 
   const startWorkout = async () => {
+    workoutStartRef.current = new Date();
     await fetch(`/api/workouts/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -72,11 +77,26 @@ export default function WorkoutPage({ params }: { params: Promise<{ id: string }
   };
 
   const completeWorkout = async () => {
+    const endDate = new Date();
     await fetch(`/api/workouts/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: "completed" }),
     });
+
+    // Save to HealthKit if we have a start time
+    if (workoutStartRef.current && workout) {
+      saveWorkoutToHealth({
+        startDate: workoutStartRef.current,
+        endDate,
+        name: workout.name || "WOD Workout",
+        type: "functionalStrengthTraining",
+        calories: healthStats.totalCalories,
+      }).catch(() => {
+        // HealthKit save is best-effort
+      });
+    }
+
     router.push("/history");
   };
 
@@ -152,6 +172,20 @@ export default function WorkoutPage({ params }: { params: Promise<{ id: string }
               {s.name}
             </button>
           ))}
+        </div>
+      )}
+
+      {/* Heart rate monitor - visible during active workouts */}
+      {workout.status === "in_progress" && (
+        <div className="px-4 pt-3">
+          <HeartRateMonitor
+            workoutName={workout.name || "Workout"}
+            currentExercise={section?.exercises[0]?.exercise_name}
+            currentSet={section?.exercises[0]?.sets.filter(s => s.completed).length ?? 0}
+            totalSets={section?.exercises[0]?.sets.length ?? 0}
+            isActive={workout.status === "in_progress"}
+            onSessionEnd={(stats) => setHealthStats(stats)}
+          />
         </div>
       )}
 
