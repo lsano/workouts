@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { isNativeCamera, takePhotoNative, hapticImpact } from "@/lib/camera";
 
 interface TranscribedExercise {
   exercise_name: string;
@@ -27,14 +28,34 @@ export default function GymMode() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<string | null>(null);
+  const [capturedFile, setCapturedFile] = useState<File | null>(null);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [plan, setPlan] = useState<TranscribedPlan | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [hasNativeCamera, setHasNativeCamera] = useState(false);
+
+  useEffect(() => {
+    isNativeCamera().then(setHasNativeCamera);
+  }, []);
+
+  const handleNativeCapture = async () => {
+    hapticImpact("light");
+    const file = await takePhotoNative();
+    if (file) {
+      setCapturedFile(file);
+      const reader = new FileReader();
+      reader.onload = (ev) => setPreview(ev.target?.result as string);
+      reader.readAsDataURL(file);
+      setError(null);
+      setPlan(null);
+    }
+  };
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    setCapturedFile(file);
     const reader = new FileReader();
     reader.onload = (ev) => {
       setPreview(ev.target?.result as string);
@@ -44,12 +65,21 @@ export default function GymMode() {
     setPlan(null);
   };
 
+  const handleCaptureClick = () => {
+    if (hasNativeCamera) {
+      handleNativeCapture();
+    } else {
+      fileInputRef.current?.click();
+    }
+  };
+
   const transcribe = async () => {
-    const file = fileInputRef.current?.files?.[0];
+    const file = capturedFile || fileInputRef.current?.files?.[0];
     if (!file) return;
 
     setIsTranscribing(true);
     setError(null);
+    hapticImpact("light");
 
     try {
       const formData = new FormData();
@@ -67,6 +97,7 @@ export default function GymMode() {
 
       const data = await res.json();
       setPlan(data);
+      hapticImpact("medium");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to transcribe");
     } finally {
@@ -76,6 +107,7 @@ export default function GymMode() {
 
   const startWorkout = async () => {
     if (!plan) return;
+    hapticImpact("heavy");
 
     const res = await fetch("/api/workouts", {
       method: "POST",
@@ -119,7 +151,7 @@ export default function GymMode() {
         {!plan && (
           <div className="space-y-4">
             <div
-              onClick={() => fileInputRef.current?.click()}
+              onClick={handleCaptureClick}
               className="border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-2xl p-8 text-center cursor-pointer active:bg-gray-50 dark:active:bg-gray-900"
             >
               {preview ? (
@@ -133,7 +165,9 @@ export default function GymMode() {
                   <div className="text-5xl mb-3">&#x1F4F7;</div>
                   <p className="font-semibold">Tap to photograph the whiteboard</p>
                   <p className="text-sm text-gray-500 mt-1">
-                    Take a clear photo of the workout plan
+                    {hasNativeCamera
+                      ? "Opens your camera for a clear shot"
+                      : "Take a clear photo of the workout plan"}
                   </p>
                 </>
               )}
@@ -153,6 +187,7 @@ export default function GymMode() {
                 <button
                   onClick={() => {
                     setPreview(null);
+                    setCapturedFile(null);
                     if (fileInputRef.current) fileInputRef.current.value = "";
                   }}
                   className="flex-1 py-3 rounded-xl font-semibold bg-gray-200 dark:bg-gray-700"

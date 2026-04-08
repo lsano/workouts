@@ -42,6 +42,10 @@ yarn-error.log*
 # vercel
 .vercel
 
+# capacitor native projects (generated, not checked in)
+/ios
+/android
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
