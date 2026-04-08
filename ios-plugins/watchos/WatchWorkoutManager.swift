@@ -2,6 +2,18 @@ import Foundation
 import HealthKit
 import WatchConnectivity
 
+/// Exercise entry received from the iPhone for plan display and data entry.
+struct WatchExerciseEntry: Identifiable {
+    let id: String
+    let name: String
+    let notes: String?
+    let sectionName: String
+    var setsTotal: Int
+    var setsCompleted: Int
+    var lastReps: Int?
+    var lastWeight: Int?
+}
+
 /// Manages workout state on the Apple Watch.
 /// Receives updates from the iPhone app and runs the HealthKit workout session
 /// locally on the watch for heart rate monitoring.
@@ -12,6 +24,7 @@ class WatchWorkoutManager: NSObject, ObservableObject, WCSessionDelegate, HKWork
     @Published var isWorkoutActive = false
     @Published var workoutName: String = ""
     @Published var currentExercise: String = ""
+    @Published var currentExerciseIndex: Int = 0
     @Published var currentSet: Int = 0
     @Published var totalSets: Int = 0
     @Published var timerPhase: String = "idle" // "work", "rest", "idle"
@@ -19,6 +32,7 @@ class WatchWorkoutManager: NSObject, ObservableObject, WCSessionDelegate, HKWork
     @Published var heartRate: Double = 0
     @Published var activeCalories: Double = 0
     @Published var elapsedSeconds: Int = 0
+    @Published var exercises: [WatchExerciseEntry] = []
 
     // MARK: - Private
 
@@ -78,10 +92,33 @@ class WatchWorkoutManager: NSObject, ObservableObject, WCSessionDelegate, HKWork
 
             if let name = message["workoutName"] as? String { self.workoutName = name }
             if let exercise = message["currentExercise"] as? String { self.currentExercise = exercise }
+            if let idx = message["currentExerciseIndex"] as? Int { self.currentExerciseIndex = idx }
             if let set = message["currentSet"] as? Int { self.currentSet = set }
             if let total = message["totalSets"] as? Int { self.totalSets = total }
             if let phase = message["timerPhase"] as? String { self.timerPhase = phase }
             if let time = message["timeRemaining"] as? Int { self.timeRemaining = time }
+
+            // Parse exercise list if present
+            if let exerciseList = message["exercises"] as? [[String: Any]] {
+                self.exercises = exerciseList.compactMap { dict in
+                    guard let id = dict["id"] as? String,
+                          let name = dict["name"] as? String,
+                          let sectionName = dict["sectionName"] as? String,
+                          let setsTotal = dict["setsTotal"] as? Int,
+                          let setsCompleted = dict["setsCompleted"] as? Int
+                    else { return nil }
+                    return WatchExerciseEntry(
+                        id: id,
+                        name: name,
+                        notes: dict["notes"] as? String,
+                        sectionName: sectionName,
+                        setsTotal: setsTotal,
+                        setsCompleted: setsCompleted,
+                        lastReps: dict["lastReps"] as? Int,
+                        lastWeight: dict["lastWeight"] as? Int
+                    )
+                }
+            }
         }
     }
 

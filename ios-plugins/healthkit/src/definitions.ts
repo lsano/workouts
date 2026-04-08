@@ -47,15 +47,30 @@ export interface HealthSummary {
   bodyMass?: number;
 }
 
+/** An exercise entry sent to the watch for plan display and data entry */
+export interface WatchExerciseEntry {
+  id: string;
+  name: string;
+  notes?: string;
+  sectionName: string;
+  setsTotal: number;
+  setsCompleted: number;
+  lastReps?: number;
+  lastWeight?: number;
+}
+
 export interface WatchWorkoutState {
   isActive: boolean;
   workoutName?: string;
   currentExercise?: string;
+  currentExerciseIndex?: number;
   currentSet?: number;
   totalSets?: number;
   timerPhase?: "work" | "rest" | "idle";
   timeRemaining?: number;
   heartRate?: number;
+  /** Full exercise list for the watch to display the workout plan */
+  exercises?: WatchExerciseEntry[];
 }
 
 export interface WODHealthKitPlugin {

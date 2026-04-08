@@ -2,8 +2,11 @@ import SwiftUI
 
 /// The main workout view displayed on Apple Watch during an active session.
 /// Shows timer, current exercise, heart rate, and set logging controls.
+/// Tap the exercise name to open set input. Tap "Plan" to see all exercises.
 struct ActiveWorkoutView: View {
     @ObservedObject var manager: WatchWorkoutManager
+    @State private var showingSetInput = false
+    @State private var showingPlan = false
 
     var body: some View {
         ScrollView {
@@ -30,6 +33,14 @@ struct ActiveWorkoutView: View {
         }
         .navigationTitle("WOD")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showingSetInput) {
+            SetInputView(manager: manager, exerciseIndex: manager.currentExerciseIndex)
+        }
+        .sheet(isPresented: $showingPlan) {
+            NavigationStack {
+                WorkoutPlanView(manager: manager)
+            }
+        }
     }
 
     // MARK: - Timer
@@ -74,15 +85,57 @@ struct ActiveWorkoutView: View {
 
     private var exerciseSection: some View {
         VStack(spacing: 2) {
-            Text(manager.currentExercise.isEmpty ? "Ready" : manager.currentExercise)
-                .font(.headline)
-                .lineLimit(2)
-                .multilineTextAlignment(.center)
+            // Tappable exercise name — opens set input
+            Button(action: { showingSetInput = true }) {
+                VStack(spacing: 2) {
+                    Text(manager.currentExercise.isEmpty ? "Ready" : manager.currentExercise)
+                        .font(.headline)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.center)
 
-            if manager.totalSets > 0 {
-                Text("Set \(manager.currentSet) / \(manager.totalSets)")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                    if manager.totalSets > 0 {
+                        Text("Set \(manager.currentSet) / \(manager.totalSets)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    Text("Tap to log reps")
+                        .font(.caption2)
+                        .foregroundColor(.blue)
+                }
+            }
+            .buttonStyle(.plain)
+
+            // Exercise navigation
+            if manager.exercises.count > 1 {
+                HStack(spacing: 16) {
+                    Button(action: {
+                        let prev = max(0, manager.currentExerciseIndex - 1)
+                        manager.sendAction("navigateExercise", payload: ["index": prev])
+                    }) {
+                        Image(systemName: "chevron.left")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(manager.currentExerciseIndex <= 0)
+                    .opacity(manager.currentExerciseIndex <= 0 ? 0.3 : 1)
+
+                    Text("\(manager.currentExerciseIndex + 1)/\(manager.exercises.count)")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+
+                    Button(action: {
+                        let next = min(manager.exercises.count - 1, manager.currentExerciseIndex + 1)
+                        manager.sendAction("navigateExercise", payload: ["index": next])
+                    }) {
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(manager.currentExerciseIndex >= manager.exercises.count - 1)
+                    .opacity(manager.currentExerciseIndex >= manager.exercises.count - 1 ? 0.3 : 1)
+                }
+                .padding(.top, 4)
             }
         }
     }
@@ -127,14 +180,14 @@ struct ActiveWorkoutView: View {
 
     private var actionsSection: some View {
         VStack(spacing: 8) {
-            // Complete set button (big, easy to tap)
+            // Log set with data (opens input sheet)
             Button(action: {
                 WKInterfaceDevice.current().play(.click)
-                manager.sendAction("completeSet")
+                showingSetInput = true
             }) {
                 HStack {
-                    Image(systemName: "checkmark.circle.fill")
-                    Text("Set Done")
+                    Image(systemName: "pencil.circle.fill")
+                    Text("Log Set")
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 8)
@@ -142,18 +195,47 @@ struct ActiveWorkoutView: View {
             .buttonStyle(.borderedProminent)
             .tint(.green)
 
-            // End workout
+            // Quick complete (no data entry)
             Button(action: {
-                manager.sendAction("endWorkout")
+                WKInterfaceDevice.current().play(.click)
+                manager.sendAction("completeSet", payload: [
+                    "exerciseIndex": manager.currentExerciseIndex,
+                ])
             }) {
                 HStack {
-                    Image(systemName: "stop.fill")
-                    Text("End")
+                    Image(systemName: "checkmark.circle")
+                    Text("Quick Done")
                 }
                 .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
-            .tint(.red)
+            .tint(.green)
+
+            HStack(spacing: 8) {
+                // View full plan
+                Button(action: { showingPlan = true }) {
+                    HStack {
+                        Image(systemName: "list.bullet")
+                        Text("Plan")
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .tint(.blue)
+
+                // End workout
+                Button(action: {
+                    manager.sendAction("endWorkout")
+                }) {
+                    HStack {
+                        Image(systemName: "stop.fill")
+                        Text("End")
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .tint(.red)
+            }
         }
     }
 }

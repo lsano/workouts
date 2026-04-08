@@ -4,25 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { isNativeCamera, takePhotoNative, hapticImpact } from "@/lib/camera";
-
-interface TranscribedExercise {
-  exercise_name: string;
-  notes?: string | null;
-}
-
-interface TranscribedSection {
-  name: string;
-  section_type: string;
-  work_seconds?: number | null;
-  rest_seconds?: number | null;
-  rounds?: number | null;
-  exercises: TranscribedExercise[];
-}
-
-interface TranscribedPlan {
-  name?: string;
-  sections: TranscribedSection[];
-}
+import { PlanEditor, type TranscribedPlan } from "@/components/PlanEditor";
 
 export default function GymMode() {
   const router = useRouter();
@@ -229,62 +211,14 @@ export default function GymMode() {
           </div>
         )}
 
-        {/* Transcribed Plan Preview */}
+        {/* Transcribed Plan Editor */}
         {plan && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold">{plan.name || "Workout Plan"}</h2>
-              <button
-                onClick={() => setPlan(null)}
-                className="text-sm text-blue-500 font-medium"
-              >
-                Re-scan
-              </button>
-            </div>
-
-            {plan.sections.map((section, i) => (
-              <div
-                key={i}
-                className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm"
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="font-semibold">{section.name}</h3>
-                  <span className="text-xs px-2 py-1 rounded-full bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300">
-                    {section.section_type}
-                  </span>
-                </div>
-
-                {(section.work_seconds || section.rest_seconds || section.rounds) && (
-                  <div className="flex gap-3 mb-2 text-xs text-gray-500">
-                    {section.work_seconds && <span>Work: {section.work_seconds}s</span>}
-                    {section.rest_seconds && <span>Rest: {section.rest_seconds}s</span>}
-                    {section.rounds && <span>Rounds: {section.rounds}</span>}
-                  </div>
-                )}
-
-                <ul className="space-y-1">
-                  {section.exercises.map((ex, j) => (
-                    <li key={j} className="flex items-start gap-2 text-sm">
-                      <span className="text-blue-500 mt-0.5">&#x2022;</span>
-                      <span>
-                        {ex.exercise_name}
-                        {ex.notes && (
-                          <span className="text-gray-400 ml-1">({ex.notes})</span>
-                        )}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-
-            <button
-              onClick={startWorkout}
-              className="w-full py-4 rounded-2xl font-bold text-lg bg-green-500 text-white active:bg-green-600 shadow-lg"
-            >
-              Start Workout
-            </button>
-          </div>
+          <PlanEditor
+            plan={plan}
+            onChange={setPlan}
+            onStart={startWorkout}
+            onRescan={() => setPlan(null)}
+          />
         )}
       </div>
     </main>

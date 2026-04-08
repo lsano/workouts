@@ -34,7 +34,16 @@ Rules:
 - Clean up fun/themed names but keep them recognizable (e.g., "KB Goblin Squats" stays as-is)
 - For bilateral exercises marked with (R+L), add that to notes
 - Tabata notation "0:20/0:10 x4" means work_seconds: 20, rest_seconds: 10, rounds: 4
-- Group exercises under their station/section headers`;
+- Group exercises under their station/section headers
+
+Programming order rules — output sections in the correct execution order:
+- Warm-up sections always come first
+- Main work sections (stations, circuits, AMRAPs, EMOMs) in the order written on the board
+- If stations are numbered, respect the numbering
+- Tabata/finisher sections come after the main work
+- Cooldown sections always come last
+- Within each section, maintain the exercise order as written
+- If the board layout is spatial (e.g., columns or zones), infer top-to-bottom, left-to-right reading order`;
 
 export async function POST(request: NextRequest) {
   const apiKey = process.env.ANTHROPIC_API_KEY;

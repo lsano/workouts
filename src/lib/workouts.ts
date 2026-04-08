@@ -304,3 +304,113 @@ export function deleteWorkout(workoutId: string) {
   const db = getDb();
   db.prepare("DELETE FROM workouts WHERE id = ?").run(workoutId);
 }
+
+/**
+ * Reorder sections within a workout.
+ * @param workoutId - The workout to modify
+ * @param sectionIds - Ordered array of section IDs representing the new order
+ */
+export function reorderSections(workoutId: string, sectionIds: string[]) {
+  const db = getDb();
+  const update = db.prepare("UPDATE workout_sections SET sort_order = ? WHERE id = ? AND workout_id = ?");
+  const tx = db.transaction(() => {
+    sectionIds.forEach((id, idx) => {
+      update.run(idx, id, workoutId);
+    });
+  });
+  tx();
+}
+
+/**
+ * Reorder exercises within a section.
+ * @param sectionId - The section to modify
+ * @param exerciseIds - Ordered array of exercise IDs representing the new order
+ */
+export function reorderExercises(sectionId: string, exerciseIds: string[]) {
+  const db = getDb();
+  const update = db.prepare("UPDATE workout_exercises SET sort_order = ? WHERE id = ? AND section_id = ?");
+  const tx = db.transaction(() => {
+    exerciseIds.forEach((id, idx) => {
+      update.run(idx, id, sectionId);
+    });
+  });
+  tx();
+}
+
+/**
+ * Move an exercise from one section to another.
+ */
+export function moveExerciseToSection(exerciseId: string, targetSectionId: string, sortOrder: number) {
+  const db = getDb();
+  db.prepare("UPDATE workout_exercises SET section_id = ?, sort_order = ? WHERE id = ?")
+    .run(targetSectionId, sortOrder, exerciseId);
+}
+
+/**
+ * Delete a section and all its exercises/sets.
+ */
+export function deleteSection(sectionId: string) {
+  const db = getDb();
+  const tx = db.transaction(() => {
+    const exercises = db.prepare("SELECT id FROM workout_exercises WHERE section_id = ?").all(sectionId) as Array<{ id: string }>;
+    for (const ex of exercises) {
+      db.prepare("DELETE FROM exercise_sets WHERE workout_exercise_id = ?").run(ex.id);
+    }
+    db.prepare("DELETE FROM workout_exercises WHERE section_id = ?").run(sectionId);
+    db.prepare("DELETE FROM workout_sections WHERE id = ?").run(sectionId);
+  });
+  tx();
+}
+
+/**
+ * Delete an exercise and all its sets.
+ */
+export function deleteExercise(exerciseId: string) {
+  const db = getDb();
+  const tx = db.transaction(() => {
+    db.prepare("DELETE FROM exercise_sets WHERE workout_exercise_id = ?").run(exerciseId);
+    db.prepare("DELETE FROM workout_exercises WHERE id = ?").run(exerciseId);
+  });
+  tx();
+}
+
+/**
+ * Update an exercise name or notes.
+ */
+export function updateExercise(exerciseId: string, data: { exercise_name?: string; notes?: string | null }) {
+  const db = getDb();
+  const fields: string[] = [];
+  const params: (string | null)[] = [];
+
+  if (data.exercise_name !== undefined) { fields.push("exercise_name = ?"); params.push(data.exercise_name); }
+  if (data.notes !== undefined) { fields.push("notes = ?"); params.push(data.notes); }
+
+  if (fields.length === 0) return;
+  params.push(exerciseId);
+  db.prepare(`UPDATE workout_exercises SET ${fields.join(", ")} WHERE id = ?`).run(...params);
+}
+
+/**
+ * Update a section's metadata.
+ */
+export function updateSection(sectionId: string, data: {
+  name?: string;
+  section_type?: string;
+  work_seconds?: number | null;
+  rest_seconds?: number | null;
+  rounds?: number | null;
+}) {
+  const db = getDb();
+  const fields: string[] = [];
+  const params: (string | number | null)[] = [];
+
+  if (data.name !== undefined) { fields.push("name = ?"); params.push(data.name); }
+  if (data.section_type !== undefined) { fields.push("section_type = ?"); params.push(data.section_type); }
+  if (data.work_seconds !== undefined) { fields.push("work_seconds = ?"); params.push(data.work_seconds); }
+  if (data.rest_seconds !== undefined) { fields.push("rest_seconds = ?"); params.push(data.rest_seconds); }
+  if (data.rounds !== undefined) { fields.push("rounds = ?"); params.push(data.rounds); }
+
+  if (fields.length === 0) return;
+  params.push(sectionId);
+  db.prepare(`UPDATE workout_sections SET ${fields.join(", ")} WHERE id = ?`).run(...params);
+}
