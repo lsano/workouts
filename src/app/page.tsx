@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { HealthDashboard } from "@/components/HealthDashboard";
 
 export default function Home() {
   return (
@@ -10,6 +11,9 @@ export default function Home() {
             Track your gym workouts and build home HIIT sessions
           </p>
         </div>
+
+        {/* Health dashboard - shows when HealthKit is available */}
+        <HealthDashboard />
 
         <div className="space-y-4">
           <Link
