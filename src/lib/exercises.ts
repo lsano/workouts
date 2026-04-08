@@ -100,8 +100,9 @@ export function getExercises(category?: string, muscleGroup?: string): Exercise[
     params.push(category);
   }
   if (muscleGroup) {
-    sql += " AND muscle_groups LIKE ?";
-    params.push(`%"${muscleGroup}"%`);
+    const escaped = muscleGroup.replace(/[%_\\]/g, "\\$&");
+    sql += " AND muscle_groups LIKE ? ESCAPE '\\'";
+    params.push(`%"${escaped}"%`);
   }
 
   sql += " ORDER BY name";

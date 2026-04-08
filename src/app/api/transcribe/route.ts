@@ -107,9 +107,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No image provided" }, { status: 400 });
     }
 
+    // Validate file size (max 10MB)
+    const MAX_FILE_SIZE = 10 * 1024 * 1024;
+    if (imageFile.size > MAX_FILE_SIZE) {
+      return NextResponse.json({ error: "File too large (max 10MB)" }, { status: 413 });
+    }
+
+    // Validate MIME type
+    const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+    if (!ALLOWED_TYPES.includes(imageFile.type)) {
+      return NextResponse.json({ error: "Invalid file type. Use JPEG, PNG, or WebP." }, { status: 400 });
+    }
+
     const bytes = await imageFile.arrayBuffer();
     const base64 = Buffer.from(bytes).toString("base64");
-    const mediaType = imageFile.type || "image/jpeg";
+    const mediaType = imageFile.type;
 
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -145,10 +157,10 @@ export async function POST(request: NextRequest) {
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
+      console.error("Anthropic API error:", response.status, await response.text());
       return NextResponse.json(
-        { error: `Anthropic API error: ${response.status}`, details: errorText },
-        { status: 500 }
+        { error: "Image transcription service error. Please try again." },
+        { status: 502 }
       );
     }
 
@@ -158,12 +170,31 @@ export async function POST(request: NextRequest) {
 
     // Parse the JSON from the response (may be wrapped in ```json blocks)
     const cleaned = jsonText.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-    const parsed = JSON.parse(cleaned);
+
+    let parsed;
+    try {
+      parsed = JSON.parse(cleaned);
+    } catch {
+      console.error("Failed to parse transcription response as JSON");
+      return NextResponse.json(
+        { error: "Could not parse the workout from this image. Try a clearer photo." },
+        { status: 422 }
+      );
+    }
+
+    // Validate basic structure
+    if (!parsed.sections || !Array.isArray(parsed.sections)) {
+      return NextResponse.json(
+        { error: "Could not identify workout sections in this image." },
+        { status: 422 }
+      );
+    }
 
     return NextResponse.json(parsed);
   } catch (error) {
+    console.error("Transcription error:", error);
     return NextResponse.json(
-      { error: "Failed to transcribe image", details: String(error) },
+      { error: "Failed to transcribe image. Please try again." },
       { status: 500 }
     );
   }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { hapticImpact } from "@/lib/camera";
 
 interface SetData {
   id: string;
@@ -106,7 +107,10 @@ export default function SetTracker({ exerciseName, sets, workoutId, onUpdate }: 
             />
 
             <button
-              onClick={() => updateSet(set.id, "completed", !set.completed)}
+              onClick={() => {
+                hapticImpact(set.completed ? "light" : "heavy");
+                updateSet(set.id, "completed", !set.completed);
+              }}
               className={`w-8 h-8 rounded-full flex items-center justify-center text-lg ${
                 set.completed
                   ? "bg-green-500 text-white"

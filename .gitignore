@@ -34,13 +34,18 @@ yarn-error.log*
 .env*
 !.env.local.example
 
-# database
+# database (stored in .data/ outside web root)
+/.data/
 *.db
 *.db-wal
 *.db-shm
 
 # vercel
 .vercel
+
+# capacitor native projects (generated, not checked in)
+/ios
+/android
 
 # typescript
 *.tsbuildinfo

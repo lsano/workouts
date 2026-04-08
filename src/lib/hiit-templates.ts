@@ -247,16 +247,18 @@ export function getTemplates(filters?: {
     params.push(filters.style);
   }
   if (filters?.equipment) {
-    sql += " AND equipment LIKE ?";
-    params.push(`%"${filters.equipment}"%`);
+    const escaped = filters.equipment.replace(/[%_\\]/g, "\\$&");
+    sql += " AND equipment LIKE ? ESCAPE '\\'";
+    params.push(`%"${escaped}"%`);
   }
   if (filters?.difficulty) {
     sql += " AND difficulty = ?";
     params.push(filters.difficulty);
   }
   if (filters?.muscleGroup) {
-    sql += " AND target_muscle_groups LIKE ?";
-    params.push(`%"${filters.muscleGroup}"%`);
+    const escaped = filters.muscleGroup.replace(/[%_\\]/g, "\\$&");
+    sql += " AND target_muscle_groups LIKE ? ESCAPE '\\'";
+    params.push(`%"${escaped}"%`);
   }
 
   sql += " ORDER BY name";
