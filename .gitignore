@@ -34,7 +34,8 @@ yarn-error.log*
 .env*
 !.env.local.example
 
-# database
+# database (stored in .data/ outside web root)
+/.data/
 *.db
 *.db-wal
 *.db-shm
