@@ -17,3 +17,8 @@ Packages/
 # Keys and secrets
 *.pem
 .env*
+
+# Legacy build artifacts (safe to delete)
+.next/
+node_modules/
+next-env.d.ts
