@@ -44,7 +44,7 @@ yarn-error.log*
 .vercel
 
 # capacitor native projects (generated, not checked in)
-/ios
+/ios/App
 /android
 
 # typescript
