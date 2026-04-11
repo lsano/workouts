@@ -1,6 +1,7 @@
 import Foundation
 import HealthKit
 import WatchConnectivity
+import CoreMotion
 
 /// Exercise entry received from the iPhone for plan display and data entry.
 struct WatchExerciseEntry: Identifiable {
@@ -34,6 +35,16 @@ class WatchWorkoutManager: NSObject, ObservableObject, WCSessionDelegate, HKWork
     @Published var elapsedSeconds: Int = 0
     @Published var exercises: [WatchExerciseEntry] = []
 
+    // MARK: - Auto-Detection Published State
+
+    @Published var autoRepCount: Int = 0
+    @Published var autoExerciseName: String = ""
+    @Published var autoConfidence: Double = 0
+    @Published var formAlertMessage: String = ""
+    @Published var formAlertVisible: Bool = false
+    @Published var isAutoMode: Bool = false
+    @Published var movementState: String = "idle" // idle, active, resting
+
     // MARK: - Private
 
     private let healthStore = HKHealthStore()
@@ -41,6 +52,12 @@ class WatchWorkoutManager: NSObject, ObservableObject, WCSessionDelegate, HKWork
     private var workoutBuilder: HKLiveWorkoutBuilder?
     private var timer: Timer?
     private var workoutStartDate: Date?
+
+    // MARK: - Motion Capture
+
+    private let motionManager = CMMotionManager()
+    private var sensorBuffer: [[String: Any]] = []
+    private var sensorTimer: Timer?
 
     // MARK: - Init
 
@@ -119,6 +136,50 @@ class WatchWorkoutManager: NSObject, ObservableObject, WCSessionDelegate, HKWork
                     )
                 }
             }
+
+            // MARK: Auto-Detection Messages
+
+            if let isAutoMode = message["isAutoMode"] as? Bool {
+                self.isAutoMode = isAutoMode
+            }
+
+            if let messageType = message["type"] as? String {
+                switch messageType {
+                case "repUpdate":
+                    if let reps = message["repCount"] as? Int { self.autoRepCount = reps }
+                    if let name = message["exerciseName"] as? String { self.autoExerciseName = name }
+                    if let confidence = message["confidence"] as? Double { self.autoConfidence = confidence }
+
+                case "formAlert":
+                    if let alertMsg = message["message"] as? String {
+                        self.formAlertMessage = alertMsg
+                        self.formAlertVisible = true
+                        WKInterfaceDevice.current().play(.notification)
+                        // Auto-hide after 2 seconds
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                            self?.formAlertVisible = false
+                        }
+                    }
+
+                case "setTransition":
+                    if let transitionType = message["transition"] as? String {
+                        switch transitionType {
+                        case "rest":
+                            WKInterfaceDevice.current().play(.directionUp)
+                        case "setStart":
+                            WKInterfaceDevice.current().play(.start)
+                        default:
+                            WKInterfaceDevice.current().play(.click)
+                        }
+                    }
+
+                case "movementState":
+                    if let state = message["state"] as? String { self.movementState = state }
+
+                default:
+                    break
+                }
+            }
         }
     }
 
@@ -155,6 +216,7 @@ class WatchWorkoutManager: NSObject, ObservableObject, WCSessionDelegate, HKWork
             builder.beginCollection(withStart: Date()) { _, _ in }
 
             startTimer()
+            startMotionCapture()
         } catch {
             print("[WODWatch] Failed to start workout: \(error.localizedDescription)")
         }
@@ -168,6 +230,7 @@ class WatchWorkoutManager: NSObject, ObservableObject, WCSessionDelegate, HKWork
         workoutSession = nil
         workoutBuilder = nil
         stopTimer()
+        stopMotionCapture()
 
         DispatchQueue.main.async {
             self.heartRate = 0
@@ -227,6 +290,64 @@ class WatchWorkoutManager: NSObject, ObservableObject, WCSessionDelegate, HKWork
                 }
             }
         }
+    }
+
+    // MARK: - Motion Capture
+
+    private func startMotionCapture() {
+        guard motionManager.isDeviceMotionAvailable else {
+            print("[WODWatch] Device motion not available")
+            return
+        }
+
+        motionManager.deviceMotionUpdateInterval = 0.01 // 100Hz
+        let motionQueue = OperationQueue()
+        motionQueue.name = "com.wod.motionCapture"
+        motionQueue.maxConcurrentOperationCount = 1
+
+        motionManager.startDeviceMotionUpdates(to: motionQueue) { [weak self] motion, error in
+            guard let self = self, let motion = motion else { return }
+            let sample: [String: Any] = [
+                "timestamp": motion.timestamp,
+                "ax": motion.userAcceleration.x,
+                "ay": motion.userAcceleration.y,
+                "az": motion.userAcceleration.z,
+                "gx": motion.rotationRate.x,
+                "gy": motion.rotationRate.y,
+                "gz": motion.rotationRate.z,
+            ]
+            self.sensorBuffer.append(sample)
+        }
+
+        sensorTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+            self?.flushSensorBuffer()
+        }
+    }
+
+    private func stopMotionCapture() {
+        motionManager.stopDeviceMotionUpdates()
+        sensorTimer?.invalidate()
+        sensorTimer = nil
+        sensorBuffer.removeAll()
+    }
+
+    private func flushSensorBuffer() {
+        guard !sensorBuffer.isEmpty else { return }
+        guard WCSession.default.isReachable else { return }
+
+        let batch = sensorBuffer
+        sensorBuffer.removeAll()
+
+        WCSession.default.sendMessage(["sensorBatch": batch], replyHandler: nil) { error in
+            print("[WODWatch] Sensor send error: \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - Form Alert
+
+    func dismissFormAlert() {
+        formAlertVisible = false
+        formAlertMessage = ""
     }
 
     // MARK: - Helpers

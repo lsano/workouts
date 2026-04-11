@@ -69,6 +69,17 @@ const SEED_EXERCISES: Omit<Exercise, "id">[] = [
   { name: "Band Glute Bridge", category: "band", muscle_groups: ["glutes", "hamstrings"], description: "Glute bridge with band around knees", is_bilateral: false },
   { name: "Band Pull-Apart", category: "band", muscle_groups: ["back", "shoulders"], description: "Pull band apart at chest height", is_bilateral: false },
   { name: "Band Squat", category: "band", muscle_groups: ["quads", "glutes"], description: "Squat with band resistance", is_bilateral: false },
+
+  // Sensor-tracked exercises (Tier 1 - high auto-detection confidence)
+  { name: "Jump Rope", category: "cardio", muscle_groups: ["calves", "shoulders", "core"], description: "Standard jump rope, both feet", is_bilateral: false },
+  { name: "Pogo Hops", category: "bodyweight", muscle_groups: ["calves", "quads", "core"], description: "Quick vertical hops on balls of feet", is_bilateral: false },
+  { name: "Alternating Lunges", category: "bodyweight", muscle_groups: ["quads", "glutes", "hamstrings"], description: "Stationary lunges alternating left and right", is_bilateral: true },
+  { name: "Step-Ups", category: "bodyweight", muscle_groups: ["quads", "glutes", "calves"], description: "Step up onto box or bench alternating legs", is_bilateral: true },
+
+  // Sensor-tracked exercises (Tier 2 - moderate auto-detection confidence)
+  { name: "Skater Hops", category: "bodyweight", muscle_groups: ["quads", "glutes", "calves", "hip_flexors"], description: "Lateral bounding from foot to foot", is_bilateral: true },
+  { name: "Agility Ladder Drills", category: "cardio", muscle_groups: ["calves", "quads", "core", "hip_flexors"], description: "Quick footwork through agility ladder", is_bilateral: false },
+  { name: "Box Jumps", category: "bodyweight", muscle_groups: ["quads", "glutes", "calves", "core"], description: "Explosive two-foot jump onto elevated surface", is_bilateral: false },
 ];
 
 export function seedExercises() {

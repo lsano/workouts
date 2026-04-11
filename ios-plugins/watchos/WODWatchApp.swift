@@ -11,7 +11,11 @@ struct WODWatchApp: App {
         WindowGroup {
             NavigationStack {
                 if workoutManager.isWorkoutActive {
-                    ActiveWorkoutView(manager: workoutManager)
+                    if workoutManager.isAutoMode {
+                        AutoWorkoutView(manager: workoutManager)
+                    } else {
+                        ActiveWorkoutView(manager: workoutManager)
+                    }
                 } else {
                     IdleWatchView(manager: workoutManager)
                 }

@@ -104,6 +104,7 @@ export default function History() {
         <div className="flex gap-2">
           {[
             { value: "all", label: "All" },
+            { value: "sensor", label: "Auto" },
             { value: "gym", label: "Gym" },
             { value: "home", label: "Home" },
           ].map((f) => (
@@ -132,11 +133,11 @@ export default function History() {
             <p className="text-gray-500">No workouts yet</p>
             <p className="text-sm text-gray-400 mt-1">Start your first workout!</p>
             <div className="flex gap-3 justify-center mt-4">
+              <Link href="/live-workout" className="px-4 py-2 rounded-xl bg-emerald-500 text-white text-sm font-medium">
+                Auto-Detect
+              </Link>
               <Link href="/gym" className="px-4 py-2 rounded-xl bg-blue-500 text-white text-sm font-medium">
                 Gym Mode
-              </Link>
-              <Link href="/home-workout" className="px-4 py-2 rounded-xl bg-orange-500 text-white text-sm font-medium">
-                Home Mode
               </Link>
             </div>
           </div>
@@ -155,11 +156,13 @@ export default function History() {
                         <h4 className="font-semibold">{w.name || "Workout"}</h4>
                         <div className="flex items-center gap-2 mt-1">
                           <span className={`text-xs px-2 py-0.5 rounded-full ${
-                            w.mode === "gym"
-                              ? "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300"
-                              : "bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300"
+                            w.mode === "sensor"
+                              ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300"
+                              : w.mode === "gym"
+                                ? "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300"
+                                : "bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300"
                           }`}>
-                            {w.mode}
+                            {w.mode === "sensor" ? "auto" : w.mode}
                           </span>
                           <span className={`text-xs px-2 py-0.5 rounded-full ${
                             w.status === "completed"

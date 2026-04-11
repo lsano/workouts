@@ -84,6 +84,81 @@ struct ActiveWorkoutView: View {
     // MARK: - Exercise
 
     private var exerciseSection: some View {
+        Group {
+            if manager.isAutoMode {
+                autoExerciseSection
+            } else {
+                manualExerciseSection
+            }
+        }
+    }
+
+    private var autoExerciseSection: some View {
+        ZStack(alignment: .top) {
+            VStack(spacing: 4) {
+                // Large rep counter
+                Text("\(manager.autoRepCount)")
+                    .font(.system(size: 60, weight: .bold, design: .rounded))
+                    .foregroundColor(.primary)
+
+                // Exercise name + confidence
+                HStack(spacing: 6) {
+                    Text(manager.autoExerciseName.isEmpty ? "Detecting..." : manager.autoExerciseName)
+                        .font(.headline)
+                        .lineLimit(1)
+
+                    // Confidence dot
+                    Circle()
+                        .fill(confidenceColor)
+                        .frame(width: 8, height: 8)
+                }
+
+                // Movement state
+                Text(movementStateLabel)
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(movementStateColor)
+            }
+
+            // Form alert overlay
+            if manager.formAlertVisible {
+                Text(manager.formAlertMessage)
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.red.cornerRadius(8))
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .onTapGesture { manager.dismissFormAlert() }
+            }
+        }
+        .animation(.easeInOut(duration: 0.3), value: manager.formAlertVisible)
+    }
+
+    private var confidenceColor: Color {
+        if manager.autoConfidence > 0.8 { return .green }
+        if manager.autoConfidence > 0.5 { return .yellow }
+        return .red
+    }
+
+    private var movementStateLabel: String {
+        switch manager.movementState {
+        case "active": return "Active"
+        case "resting": return "Resting"
+        default: return "Idle"
+        }
+    }
+
+    private var movementStateColor: Color {
+        switch manager.movementState {
+        case "active": return .green
+        case "resting": return .blue
+        default: return .gray
+        }
+    }
+
+    private var manualExerciseSection: some View {
         VStack(spacing: 2) {
             // Tappable exercise name — opens set input
             Button(action: { showingSetInput = true }) {
@@ -179,6 +254,77 @@ struct ActiveWorkoutView: View {
     // MARK: - Actions
 
     private var actionsSection: some View {
+        Group {
+            if manager.isAutoMode {
+                autoActionsSection
+            } else {
+                manualActionsSection
+            }
+        }
+    }
+
+    private var autoActionsSection: some View {
+        VStack(spacing: 8) {
+            // Wrong exercise correction
+            Button(action: {
+                WKInterfaceDevice.current().play(.click)
+                manager.sendAction("correctExercise")
+            }) {
+                HStack {
+                    Image(systemName: "exclamationmark.triangle")
+                    Text("Wrong Exercise?")
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .tint(.orange)
+
+            // Rep adjustment
+            HStack(spacing: 8) {
+                Button(action: {
+                    WKInterfaceDevice.current().play(.click)
+                    manager.sendAction("adjustReps", payload: ["delta": -1])
+                }) {
+                    HStack {
+                        Image(systemName: "minus.circle")
+                        Text("Rep")
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .tint(.blue)
+
+                Button(action: {
+                    WKInterfaceDevice.current().play(.click)
+                    manager.sendAction("adjustReps", payload: ["delta": 1])
+                }) {
+                    HStack {
+                        Image(systemName: "plus.circle")
+                        Text("Rep")
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .tint(.blue)
+            }
+
+            // End workout
+            Button(action: {
+                manager.sendAction("endWorkout")
+            }) {
+                HStack {
+                    Image(systemName: "stop.fill")
+                    Text("End Workout")
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.red)
+        }
+    }
+
+    private var manualActionsSection: some View {
         VStack(spacing: 8) {
             // Log set with data (opens input sheet)
             Button(action: {
