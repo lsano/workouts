@@ -1,255 +1,306 @@
 # Architecture Overview
 
-## How It Works: Capacitor Hybrid App
+## Fully Native SwiftUI App
 
-This app uses [Capacitor](https://capacitorjs.com/) to run a web app inside a native iOS shell. Understanding this architecture is key to understanding why React/TypeScript and Swift coexist in the same repo.
-
-```
-┌─────────────────────────────────────────────────┐
-│                   iPhone                         │
-│                                                  │
-│  ┌─────────────────────────────────────────────┐ │
-│  │           Native iOS Shell (Swift)          │ │
-│  │                                             │ │
-│  │  ┌───────────────────────────────────────┐  │ │
-│  │  │         WKWebView (Safari)            │  │ │
-│  │  │                                       │  │ │
-│  │  │   Next.js React App                   │  │ │
-│  │  │   ┌─────────┐ ┌─────────┐            │  │ │
-│  │  │   │ /live-  │ │/sensor- │            │  │ │
-│  │  │   │ workout │ │ debug   │  ...pages  │  │ │
-│  │  │   └────┬────┘ └────┬────┘            │  │ │
-│  │  │        │           │                  │  │ │
-│  │  │   Capacitor JS Bridge                 │  │ │
-│  │  └────────┼───────────┼──────────────────┘  │ │
-│  │           │           │                      │ │
-│  │  ┌────────▼───────────▼──────────────────┐  │ │
-│  │  │       Native Capacitor Plugins        │  │ │
-│  │  │                                       │  │ │
-│  │  │  ┌─────────────┐ ┌─────────────────┐  │  │ │
-│  │  │  │ HealthKit   │ │  BLE Sensors    │  │  │ │
-│  │  │  │ Plugin      │ │  Plugin         │  │  │ │
-│  │  │  │ (Swift)     │ │  (Swift)        │  │  │ │
-│  │  │  │             │ │  CoreBluetooth  │  │  │ │
-│  │  │  │ HKWorkout   │ │  Stryd L/R     │  │  │ │
-│  │  │  │ HeartRate   │ │  foot pods     │  │  │ │
-│  │  │  │ WCSession   │ └─────────────────┘  │  │ │
-│  │  │  └──────┬──────┘                      │  │ │
-│  │  │         │        ┌─────────────────┐  │  │ │
-│  │  │         │        │  Sensor Engine  │  │  │ │
-│  │  │         │        │  Plugin (Swift) │  │  │ │
-│  │  │         │        │                 │  │  │ │
-│  │  │         │        │  SignalProc     │  │  │ │
-│  │  │         │        │  SensorFusion   │  │  │ │
-│  │  │         │        │  Classifier     │  │  │ │
-│  │  │         │        │  RepCounter     │  │  │ │
-│  │  │         │        │  QualityScorer  │  │  │ │
-│  │  │         │        └─────────────────┘  │  │ │
-│  │  └─────────┼─────────────────────────────┘  │ │
-│  │            │                                  │ │
-│  │            │  WatchConnectivity               │ │
-│  └────────────┼──────────────────────────────────┘ │
-│               │                                     │
-└───────────────┼─────────────────────────────────────┘
-                │
-        ┌───────▼───────────────────┐
-        │      Apple Watch          │
-        │                           │
-        │  SwiftUI App              │
-        │  ┌─────────────────────┐  │
-        │  │ AutoWorkoutView     │  │
-        │  │  - Rep counter      │  │
-        │  │  - Exercise name    │  │
-        │  │  - Form alerts      │  │
-        │  │  - Haptic feedback  │  │
-        │  └─────────────────────┘  │
-        │                           │
-        │  WatchWorkoutManager      │
-        │  - CMMotionManager 100Hz  │
-        │  - HKWorkoutSession       │
-        │  - WCSession relay        │
-        └───────────────────────────┘
-```
-
-## Why React Components Exist in a Native App
-
-Capacitor's model: **the UI is a web app**. The iPhone renders the React/Next.js pages inside a `WKWebView` (embedded Safari). Native Swift code only runs when the web layer calls into a plugin through the Capacitor bridge.
-
-This means:
-
-| Layer | Technology | Runs Where | Responsibility |
-|-------|-----------|------------|----------------|
-| **UI pages** | React/Next.js/TypeScript | WKWebView on iPhone | All screens the user sees and interacts with |
-| **API routes** | Next.js API routes | Node.js on a server or static export | Data persistence (SQLite), CRUD operations |
-| **Native plugins** | Swift | Native iOS process | Hardware access: BLE, CoreBluetooth, HealthKit, WatchConnectivity |
-| **Sensor engine** | Swift | Native iOS process | Real-time signal processing, inference (runs on background thread at 200ms intervals) |
-| **Watch app** | SwiftUI | watchOS | Sensor capture (CoreMotion), display rep counts, haptic feedback |
-
-**The web app cannot access hardware directly.** Bluetooth, HealthKit, CoreMotion, and WatchConnectivity are iOS-only APIs. The Capacitor plugin bridge is how the web layer reaches them.
-
-## Data Flow: From Sensor to Screen
-
-### During a Live Workout
+This is a native iOS + watchOS app built entirely in Swift. No web views, no JavaScript bridges, no Capacitor.
 
 ```
-1. Foot sensors (BLE)          2. Apple Watch (CoreMotion)
-   │ 50Hz accel+gyro              │ 100Hz accel+gyro
-   │                              │
-   ▼                              ▼
-   BLESensorPlugin.swift          WatchWorkoutManager.swift
-   (CoreBluetooth)                (CMMotionManager)
-   │                              │
-   │  Capacitor event             │  WCSession.sendMessage
-   │  "sensorData"                │  (batched every 100ms)
-   │                              │
-   ▼                              ▼
-   Web Layer (JS)                 WODHealthKitPlugin.swift
-   sensor-service.ts              (receives watch batches)
-   │                              │
-   │  Calls plugin                │  Capacitor event
-   │  ingestSamples()             │  "sensorData"
-   │                              │
-   ▼                              ▼
-   ┌──────────────────────────────────┐
-   │   SensorEnginePlugin.swift       │
-   │   (native, background thread)    │
-   │                                  │
-   │   SensorFusion ──► SetSegmenter  │
-   │        │                │        │
-   │        ▼                ▼        │
-   │   MovementClassifier  RepCounter │
-   │        │                │        │
-   │        ▼                ▼        │
-   │      QualityScorer               │
-   └──────────┬───────────────────────┘
-              │
-              │ Capacitor events:
-              │  "repDetected"
-              │  "setCompleted"
-              │  "formAlert"
-              ▼
-   ┌──────────────────────┐     ┌──────────────────────┐
-   │  Web Layer (React)   │     │  Apple Watch          │
-   │  live-workout/page   │     │  (via WCSession)      │
-   │                      │     │                       │
-   │  Updates rep counter │     │  Updates rep display   │
-   │  Shows set cards     │     │  Fires haptics        │
-   │  Form alert banner   │     │  Shows form alert     │
-   └──────────────────────┘     └───────────────────────┘
+┌─────────────────────────────────────────────────────┐
+│                     iPhone                           │
+│                                                      │
+│  ┌────────────────────────────────────────────────┐  │
+│  │              SwiftUI App                        │  │
+│  │                                                 │  │
+│  │  ┌─────────┐ ┌──────────┐ ┌─────────────────┐  │  │
+│  │  │  Home   │ │  Live    │ │    Trends /     │  │  │
+│  │  │  View   │ │ Workout  │ │    History      │  │  │
+│  │  └────┬────┘ └────┬─────┘ └────────┬────────┘  │  │
+│  │       │           │                │            │  │
+│  │       └───────────┼────────────────┘            │  │
+│  │                   │                              │  │
+│  │            @Observable ViewModels                │  │
+│  │       ┌───────────┼────────────────┐            │  │
+│  │       │           │                │            │  │
+│  │  SensorManager  WorkoutManager  TrendService    │  │
+│  │       │           │                │            │  │
+│  └───────┼───────────┼────────────────┼────────────┘  │
+│          │           │                │               │
+│  ┌───────▼───────────▼────────────────▼────────────┐  │
+│  │                Service Layer                     │  │
+│  │                                                  │  │
+│  │  ┌──────────┐  ┌──────────────┐  ┌───────────┐  │  │
+│  │  │   BLE    │  │  Inference   │  │ HealthKit │  │  │
+│  │  │ Manager  │  │   Engine     │  │  Service  │  │  │
+│  │  │          │  │              │  │           │  │  │
+│  │  │ CoreBT   │  │ SignalProc   │  │ HKWorkout │  │  │
+│  │  │ Stryd    │  │ Fusion       │  │ HeartRate │  │  │
+│  │  │ L/R pods │  │ Classifier   │  │ Calories  │  │  │
+│  │  │          │  │ RepCounter   │  │           │  │  │
+│  │  │          │  │ QualityScore │  │           │  │  │
+│  │  └──────────┘  └──────────────┘  └───────────┘  │  │
+│  │                                                  │  │
+│  │  ┌──────────────┐  ┌─────────────────────────┐  │  │
+│  │  │ WatchConnect │  │      SwiftData          │  │  │
+│  │  │  or          │  │  WorkoutSession          │  │  │
+│  │  │  WCSession   │  │  DetectedExerciseSet     │  │  │
+│  │  │  relay       │  │  RepEvent                │  │  │
+│  │  └──────┬───────┘  │  TrendAggregate          │  │  │
+│  │         │          └─────────────────────────┘  │  │
+│  └─────────┼───────────────────────────────────────┘  │
+│            │                                          │
+└────────────┼──────────────────────────────────────────┘
+             │  WatchConnectivity
+     ┌───────▼──────────────────────┐
+     │        Apple Watch            │
+     │                               │
+     │  SwiftUI Views                │
+     │  ┌─────────────────────────┐  │
+     │  │   AutoWorkoutView       │  │
+     │  │   - 72pt rep counter    │  │
+     │  │   - Exercise name       │  │
+     │  │   - Form alert banner   │  │
+     │  │   - Haptic feedback     │  │
+     │  └─────────────────────────┘  │
+     │                               │
+     │  WatchWorkoutManager          │
+     │  - CMMotionManager (100Hz)    │
+     │  - HKWorkoutSession           │
+     │  - WCSession → phone          │
+     └──────────────────────────────┘
 ```
 
-### Key point: The sensor engine runs natively
+## Why Native
 
-The inference pipeline (signal processing, FFT, classification, rep counting) runs as native Swift on a background `DispatchQueue`. It processes sensor data every 200ms. Results are emitted back to the web layer as Capacitor events, which the React UI subscribes to.
+Previous iterations used Capacitor (web app in a WKWebView with Swift plugins). We migrated to fully native because:
 
-The web layer never touches raw sensor data at 50-100Hz. It only receives high-level events like "rep 7 detected" or "set completed: 12 reps of Jump Rope."
+1. **Most code was already Swift** — BLE, CoreMotion, inference pipeline, watch app were all native. The web layer was just forwarding events through a bridge.
+2. **No cross-platform need** — targeting iPhone + Apple Watch only. No Android.
+3. **Eliminated bridge overhead** — sensor events no longer serialize through a JS bridge.
+4. **One language, one debugger** — Swift + Xcode end to end.
+5. **Better system integration** — background processing, notifications, and always-on sensor capture work more reliably without a WebView.
+
+## Layers
+
+| Layer | Technology | Responsibility |
+|-------|-----------|----------------|
+| **Views** | SwiftUI | All screens: home, live workout, sensor debug, history, trends |
+| **ViewModels** | @Observable classes | State management, coordinates services, drives UI |
+| **Services** | Plain Swift classes | BLE, WatchConnectivity, HealthKit, inference orchestration |
+| **Inference** | Swift + Accelerate | Signal processing, sensor fusion, exercise classification, rep counting |
+| **Persistence** | SwiftData | Workout sessions, sets, reps, trends — all on device |
+| **Watch** | SwiftUI + CoreMotion | Sensor capture, rep display, form alerts, haptics |
+
+## Data Flow: Sensor to Screen
+
+```
+Foot Sensors (BLE, 50Hz)        Apple Watch (CoreMotion, 100Hz)
+    │                               │
+    ▼                               ▼
+BLEManager.swift                WatchWorkoutManager.swift
+(CoreBluetooth)                 (CMMotionManager)
+    │                               │
+    │  onSensorData callback        │  WCSession.sendMessage
+    │                               │  (batched every 100ms)
+    ▼                               ▼
+SensorManager.swift ◄──── WatchConnector.swift
+    │                       (receives batches,
+    │                        applies time sync)
+    │
+    ▼
+InferenceEngine.swift
+    │
+    ├── SensorFusion (align 3 streams)
+    ├── SetSegmenter (activity vs rest)
+    ├── MovementClassifier (rule-based)
+    ├── RepCounter (adaptive peaks)
+    └── QualityScorer (tempo, symmetry, depth)
+    │
+    │  @Published properties update directly
+    ▼
+┌─────────────────────┐    ┌──────────────────────┐
+│  SwiftUI Views      │    │  Apple Watch          │
+│  (LiveWorkoutView)  │    │  (via WatchConnector) │
+│                     │    │                       │
+│  Reads @Observable  │    │  Receives:            │
+│  properties from    │    │  - repUpdate          │
+│  WorkoutManager     │    │  - formAlert          │
+│  and InferenceEngine│    │  - setTransition      │
+│                     │    │  Fires haptics        │
+└─────────────────────┘    └───────────────────────┘
+```
+
+**Key difference from Capacitor version:** No serialization boundary. SwiftUI views read @Observable/@Published properties directly from the inference engine. When a rep is detected, the view updates in the same process, on the same thread dispatch — no JSON encoding, no bridge crossing.
 
 ## File Organization
 
 ```
-workouts/
-├── src/                              # Web app (React/Next.js)
-│   ├── app/                          # Pages (rendered in WKWebView)
-│   │   ├── page.tsx                  # Home screen
-│   │   ├── live-workout/page.tsx     # Auto-detection workout UI
-│   │   ├── sensor-debug/page.tsx     # Sensor visualization
-│   │   ├── trends/page.tsx           # Trend analytics charts
-│   │   ├── gym/page.tsx              # Manual gym mode
-│   │   ├── history/page.tsx          # Workout history
-│   │   └── api/                      # Server-side API routes
-│   │       ├── sensor-sessions/      # Sensor workout CRUD
-│   │       └── trends/               # Trend data queries
-│   ├── lib/                          # Shared logic
-│   │   ├── db.ts                     # SQLite schema + connection
-│   │   ├── sensor-types.ts           # TypeScript types for sensor system
-│   │   ├── sensor-sessions.ts        # Sensor session CRUD operations
-│   │   ├── sensor-service.ts         # Bridge to native plugins
-│   │   └── health/health-service.ts  # Bridge to HealthKit plugin
-│   └── components/                   # Reusable React components
+ios/
+├── WODTracker/                          # iPhone app
+│   ├── App/
+│   │   ├── WODTrackerApp.swift          # @main, SwiftData container
+│   │   └── ContentView.swift            # Root NavigationStack
+│   │
+│   ├── Models/
+│   │   └── WorkoutModels.swift          # SwiftData models + enums
+│   │       - ExerciseType               # jump_rope, pogo_hops, etc.
+│   │       - MovementState              # idle, active, resting
+│   │       - WorkoutSession             # @Model — top-level session
+│   │       - DetectedExerciseSet        # @Model — auto-detected set
+│   │       - RepEvent                   # @Model — single rep
+│   │       - SensorDevice               # @Model — paired sensor
+│   │       - TrendAggregate             # @Model — daily trends
+│   │
+│   ├── Views/
+│   │   ├── HomeView.swift               # Dashboard + navigation
+│   │   ├── LiveWorkoutView.swift        # 3-phase auto-detect workout
+│   │   ├── SensorDebugView.swift        # Real-time sensor charts
+│   │   ├── HistoryView.swift            # Past workouts list
+│   │   ├── WorkoutDetailView.swift      # Drill into a session
+│   │   ├── TrendsView.swift             # Exercise analytics
+│   │   └── Components/
+│   │       ├── SetCardView.swift        # Reusable set card with edit
+│   │       ├── SensorStatusBar.swift    # L/R/W connection dots
+│   │       └── TrendChartView.swift     # Canvas-drawn charts
+│   │
+│   ├── Sensors/
+│   │   ├── BLEManager.swift             # CoreBluetooth for foot pods
+│   │   └── WatchConnector.swift         # WCSession + time sync
+│   │
+│   ├── Inference/
+│   │   ├── InferenceEngine.swift        # Orchestrates pipeline
+│   │   ├── SignalProcessing.swift       # Butterworth, FFT, peaks
+│   │   ├── SensorFusion.swift           # Multi-source alignment
+│   │   ├── SetSegmenter.swift           # Activity/rest detection
+│   │   ├── MovementClassifier.swift     # Exercise classification
+│   │   ├── RepCounter.swift             # Rep counting
+│   │   └── QualityScorer.swift          # Quality metrics
+│   │
+│   └── Services/
+│       ├── SensorManager.swift          # Coordinates BLE + Watch + Engine
+│       ├── WorkoutManager.swift         # Session lifecycle
+│       ├── HealthKitService.swift       # HKWorkoutSession, heart rate
+│       ├── TrendService.swift           # Trend computation + queries
+│       └── PersistenceController.swift  # SwiftData helpers
 │
-├── ios-plugins/                      # Native Swift code
-│   ├── healthkit/
-│   │   ├── swift/WODHealthKitPlugin.swift   # HealthKit + WatchConnectivity
-│   │   └── src/definitions.ts               # TypeScript interface
-│   ├── ble-sensors/
-│   │   ├── swift/BLESensorPlugin.swift      # CoreBluetooth for foot pods
-│   │   └── src/definitions.ts               # TypeScript interface
-│   ├── sensor-engine/
-│   │   ├── swift/SignalProcessing.swift      # DSP: filters, FFT, peaks
-│   │   ├── swift/SensorFusion.swift         # Multi-source alignment
-│   │   ├── swift/SetSegmenter.swift         # Activity/rest detection
-│   │   ├── swift/MovementClassifier.swift   # Exercise classification
-│   │   ├── swift/RepCounter.swift           # Rep counting
-│   │   ├── swift/QualityScorer.swift        # Quality metrics
-│   │   ├── swift/SensorEnginePlugin.swift   # Capacitor plugin orchestrator
-│   │   └── src/definitions.ts               # TypeScript interface
-│   ├── watchos/
-│   │   ├── WODWatchApp.swift                # Watch app entry point
-│   │   ├── WatchWorkoutManager.swift        # Sensor capture + state
-│   │   ├── AutoWorkoutView.swift            # Auto-detect workout display
-│   │   ├── ActiveWorkoutView.swift          # Manual/auto workout display
-│   │   └── SetInputView.swift               # Digital Crown rep/weight input
-│   └── setup-xcode.sh                       # Xcode project configuration
+├── WODTrackerWatch/                     # watchOS companion
+│   ├── WODWatchApp.swift                # @main entry
+│   ├── WatchWorkoutManager.swift        # CoreMotion + WCSession + state
+│   ├── AutoWorkoutView.swift            # Auto-detect rep display
+│   ├── ActiveWorkoutView.swift          # Manual + auto modes
+│   ├── IdleWatchView.swift              # "Start on iPhone" prompt
+│   ├── SetInputView.swift               # Digital Crown input
+│   ├── WorkoutPlanView.swift            # Exercise list
+│   └── WODWatch.entitlements            # HealthKit permissions
 │
-├── capacitor.config.ts               # Capacitor configuration
-└── .data/workouts.db                 # SQLite database (local)
+└── (legacy)
+    ├── src/                             # Old Next.js web app (reference)
+    └── ios-plugins/                     # Old Capacitor plugins (reference)
 ```
 
-## The Capacitor Plugin Bridge Pattern
+## SwiftData Persistence
 
-Each native plugin follows the same pattern:
-
-1. **Swift class** extends `CAPPlugin` — implements native functionality
-2. **TypeScript definitions** (`definitions.ts`) — declares the API contract
-3. **TypeScript index** (`index.ts`) — registers the plugin with `registerPlugin()`
-4. **Web fallback** (`web.ts`) — stub for browser testing (returns empty data)
-5. **Service wrapper** (`src/lib/sensor-service.ts`) — clean async API for React components
-
-Example call chain for getting connected sensors:
+All data stays on device. No server, no cloud sync (MVP).
 
 ```
-React Component
-  └─► sensor-service.ts: getConnectedSensors()
-        └─► BLESensors plugin (registered via Capacitor)
-              └─► BLESensorPlugin.swift: getConnectedDevices()
-                    └─► CoreBluetooth: returns peripheral list
+WorkoutSession (1)
+    ├── DetectedExerciseSet (many)
+    │       ├── RepEvent (many)
+    │       └── quality: SetQualityMetrics (embedded JSON)
+    └── SensorRecording (many, optional)
+
+SensorDevice (standalone)
+TrendAggregate (standalone, indexed by exercise + date)
 ```
+
+SwiftData handles migrations automatically. The model container is configured in `WODTrackerApp.swift`.
 
 ## Watch Communication Protocol
 
-The watch and phone communicate via `WatchConnectivity` (`WCSession`):
+Bidirectional via `WatchConnectivity` (`WCSession`):
 
-**Phone → Watch** (workout state updates):
-- Rep count, exercise name, confidence score
-- Form alerts ("Go deeper!") with severity
-- Set transitions (start/rest/end) triggering haptics
-- Movement state (active/resting/idle)
+**Phone → Watch:**
+```swift
+// Rep update
+["type": "repUpdate", "repCount": 7, "exerciseName": "Jump Rope", "confidence": 0.85]
 
-**Watch → Phone** (sensor data + user actions):
-- Batched CoreMotion samples (every 100ms, ~10 samples per batch)
-- User corrections (wrong exercise, adjust reps)
-- Session control (end workout)
+// Form alert (triggers haptic)
+["type": "formAlert", "message": "Go deeper!", "severity": "warning"]
 
-## Why Not a Fully Native App?
+// Set transition (triggers haptic)
+["type": "setTransition", "transition": "restStart"]
 
-The Capacitor hybrid approach was chosen because:
+// Movement state
+["type": "movementState", "state": "active"]
+```
 
-1. **The existing app was web-first** — whiteboard transcription, HIIT templates, and history were already built as React pages
-2. **UI for history, trends, corrections, settings is not latency-sensitive** — web rendering at 60fps is fine for scrolling lists and charts
-3. **Sensor processing IS latency-sensitive** — that's why it runs natively in Swift plugins, not in JavaScript
-4. **Faster iteration** — React/TypeScript is faster to iterate on for UI than SwiftUI, especially for data-heavy screens like trends
-5. **Single codebase** — one repo, one database, shared types
+**Watch → Phone:**
+```swift
+// Sensor data batch (every 100ms)
+["sensorBatch": [["t": 1234.5, "ax": 0.1, "ay": 9.8, ...]]]
 
-The tradeoff: UI rendering goes through a WebView layer, which adds ~5ms of overhead versus native SwiftUI. For a workout tracking app (not a game), this is imperceptible.
+// User actions
+["action": "correctExercise", "payload": ["exerciseType": "alternating_lunges"]]
+["action": "adjustReps", "payload": ["delta": -1]]
+["action": "endWorkout"]
+```
 
-## What Runs Where
+## Inference Pipeline
 
-| Code | Runtime | Thread | Latency Requirement |
-|------|---------|--------|-------------------|
-| React pages | WKWebView (Safari) | Main (JS) | ~16ms (60fps) |
-| API routes | Node.js / static | Server | ~50ms |
-| BLE plugin | Native iOS | CBCentralManager queue | ~20ms |
-| Sensor engine | Native iOS | Background DispatchQueue | 200ms processing loop |
-| Watch sensor capture | watchOS native | CMMotionManager queue | 10ms (100Hz) |
-| Watch UI | watchOS SwiftUI | Main | ~16ms (60fps) |
-| SQLite queries | Native (better-sqlite3) | Server | ~1ms |
+Rule-based for MVP. Runs every 200ms on a background DispatchQueue.
+
+```
+Raw samples (3 sources, 50-100Hz each)
+    │
+    ▼
+Signal Conditioning
+    - Butterworth low-pass (20Hz cutoff)
+    - Gravity removal (complementary filter)
+    - Acceleration magnitude
+    │
+    ▼
+Set Segmentation
+    - Variance-based activity detection
+    - Rest window > 3s = set boundary
+    │
+    ▼
+Exercise Classification (within active windows)
+    - FFT dominant frequency
+    - Peak acceleration amplitude
+    - Vertical vs lateral axis ratios
+    - L/R alternation pattern
+    - Gyro rotation magnitude
+    │
+    ▼
+Rep Counting
+    - Adaptive peak detection per exercise type
+    - Bilateral exercises: count both feet, divide by 2
+    │
+    ▼
+Quality Scoring
+    - Tempo consistency (CV of inter-rep intervals)
+    - L/R symmetry (peak amplitude ratio)
+    - Depth proxy (peak accel vs personal baseline)
+    - Overall weighted score
+```
+
+**Classification rules (Tier 1):**
+
+| Exercise | Frequency | Amplitude | L/R Pattern | Key Signal |
+|----------|-----------|-----------|-------------|------------|
+| Jump Rope | 2-3 Hz | Low (<2g) | Simultaneous | High freq, both feet |
+| Pogo Hops | 1-2 Hz | Moderate | Simultaneous | Lower freq than rope |
+| Alt. Lunges | 0.3-0.7 Hz | High | Alternating | Slow, asymmetric L/R |
+| Step-Ups | 0.5-1 Hz | Moderate | Alternating | One foot leads |
+
+## Xcode Project Setup
+
+The repo contains Swift source files. To build:
+
+1. Create new Xcode project: iOS App (SwiftUI, SwiftData)
+2. Add watchOS companion target
+3. Add source files from `ios/WODTracker/` and `ios/WODTrackerWatch/`
+4. Add capabilities: HealthKit, Bluetooth (Background Modes)
+5. Add frameworks: CoreBluetooth, HealthKit, WatchConnectivity, Accelerate
+6. Build and run
+
+No CocoaPods, no SPM dependencies. Everything uses Apple frameworks.
